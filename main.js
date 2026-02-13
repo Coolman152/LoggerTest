@@ -18,7 +18,7 @@
   const BANK_VIEW_SLOTS = 30;
 
   const SAVE_KEY = "logger_save_0_0_1";
-  const USERNAME_KEY = "logger_username_0_0_1";
+  const USERNAME_KEY = "iso_rpg_username_v1";
 
   // Username
   function getUsername() {
