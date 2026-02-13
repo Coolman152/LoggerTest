@@ -18,7 +18,7 @@
   const BANK_VIEW_SLOTS = 30;
 
   const SAVE_KEY = "logger_save_0_0_1";
-  const USERNAME_KEY = "iso_rpg_username_v1";
+  const USERNAME_KEY = "logger_username_0_0_1";
 
   // Username
   function getUsername() {
@@ -49,9 +49,12 @@
   const BUY_PRICES = { log: 2, fish: 3 };
 
   // Skills
-    const SKILL_ORDER = [
-    "Attack","Defence","Ranged","Magic","Construction","Constitution",
-    "Crafting","Mining","Smithing","Fishing","Cooking","Woodcutting","Farming"
+  const SKILL_ORDER = [
+    "Attack","Strength","Defence","Ranged","Prayer","Magic",
+    "Runecraft","Construction","Dungeoneering","Hitpoints",
+    "Agility","Herblore","Thieving","Crafting","Fletching","Slayer",
+    "Hunter","Mining","Smithing","Fishing","Cooking","Firemaking",
+    "Woodcutting","Farming"
   ];
 
   function xpForLevel(lvl) {
@@ -68,7 +71,7 @@
 
   // Save / Load
   function defaultState() {
-    const skills = { woodcutting: { lvl: 1, xp: 0 }, fishing: { lvl: 1, xp: 0 }, constitution: { lvl: 1, xp: 0 } };
+    const skills = { woodcutting: { lvl: 1, xp: 0 }, fishing: { lvl: 1, xp: 0 } };
     ensureAllSkills(skills);
     return {
       map: "spawn_inn",
@@ -116,7 +119,7 @@
       s.inv.coins ??= 0;
       s.bank ??= { items: [] };
       s.bank.items ??= [];
-      s.skills ??= { woodcutting: { lvl: 1, xp: 0 }, fishing: { lvl: 1, xp: 0 }, constitution: { lvl: 1, xp: 0 } };
+      s.skills ??= { woodcutting: { lvl: 1, xp: 0 }, fishing: { lvl: 1, xp: 0 } };
       ensureAllSkills(s.skills);
       s.world ??= { trees: [], fishingSpots: [] };
       s.world.trees ??= [];
@@ -170,8 +173,6 @@
   // UI elements
   const btnSkills = document.getElementById("btnSkills");
   const btnInv = document.getElementById("btnInv");
-  const btnZoomIn = document.getElementById("btnZoomIn");
-  const btnZoomOut = document.getElementById("btnZoomOut");
   const panelSkills = document.getElementById("panelSkills");
   const panelInv = document.getElementById("panelInv");
   const skillsListEl = document.getElementById("skillsList");
@@ -215,10 +216,8 @@
   }
   btnSkills.addEventListener("click", () => setTab("skills"));
   btnInv.addEventListener("click", () => setTab("inv"));
-  if (btnZoomIn) btnZoomIn.addEventListener("click", () => { camZoom *= 1.12; applyZoom(); });
-  if (btnZoomOut) btnZoomOut.addEventListener("click", () => { camZoom /= 1.12; applyZoom(); });
 
-  const skillDisplayName = (k) => (k === "constitution" ? "Constitution" : (k.charAt(0).toUpperCase()+k.slice(1)));
+  const skillDisplayName = (k) => (k === "hitpoints" ? "Hitpoints" : k.charAt(0).toUpperCase()+k.slice(1));
   const iconForSkill = (k) => (k==="woodcutting"?"🪓":k==="fishing"?"🎣":k==="mining"?"⛏️":k==="cooking"?"🍳":k==="magic"?"✨":"★");
 
   function renderSkillsList() {
@@ -476,10 +475,6 @@
     for(let x=6; x<=18; x++) setRoad(x,12);
     for(let z=7; z<=18; z++) setRoad(12,z);
     for(let x=18; x<m.w-1; x++) setRoad(x,12);
-    // Ensure NPC stand tiles are land
-    m.tileType[11][11]=0; m.heightMap[11][11]=1;
-    m.tileType[16][7]=0; m.heightMap[16][7]=1;
-    m.tileType[15][19]=0; m.heightMap[15][19]=1;
 
     m.structures=[]; m.doors=[];
     function addHouse(id,x0,z0,w,d,doorTx,doorTz,interiorId){
@@ -495,10 +490,21 @@
     m.bushes=[{tx:9,tz:10},{tx:15,tz:10},{tx:10,tz:16},{tx:14,tz:16},{tx:6,tz:13},{tx:18,tz:13}];
 
     m.npcs=[
-      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:11, tz:11, icon:"🧰" },
+      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:12, tz:11, icon:"🧰" },
       { id:"npc_logbuyer", kind:"buyer_logs", name:"Lumber Buyer", tx:7, tz:16, icon:"🪵" },
-      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:19, tz:15, icon:"🐟" },
+      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:23, tz:14, icon:"🐟" },
     ];
+  }
+  genOverworld();
+
+  const interiors = {};
+  function genInterior(id, title) {
+    const m = makeMap(IN_W, IN_H);
+    for(let z=0; z<m.h; z++) for(let x=0; x<m.w; x++){ m.tileType[z][x]=4; m.heightMap[z][x]=0; }
+    for(let x=0; x<m.w; x++){ m.tileType[0][x]=1; m.tileType[m.h-1][x]=1; }
+    for(let z=0; z<m.h; z++){ m.tileType[z][0]=1; m.tileType[z][m.w-1]=1; }
+
+    m.structures=[{ id:id+"_table", x0:3, z0:3, w:2, d:1, doorTx:-999, doorTz:-999 }];
     const doorTx=Math.floor(m.w/2), doorTz=m.h-2;
     m.doors=[{ id:"exit_"+id, kind:"exit", tx:doorTx, tz:doorTz, fromMap:id, toMap:"overworld", returnTx:null, returnTz:null }];
 
@@ -572,16 +578,10 @@
   const ISO_PITCH = Math.atan(Math.sqrt(1/2));
   const cam = new THREE.OrthographicCamera(-10,10,10,-10,0.1,800);
 
-    let camZoom = 1.06; // higher = closer
-  function applyZoom() {
-    camZoom = Math.max(0.6, Math.min(2.2, camZoom));
-    resize();
-  }
-
   function resize(){
     const w=window.innerWidth,h=window.innerHeight;
     renderer.setSize(w,h,false);
-    const aspect=w/h, zoom=camZoom, viewSize=13;
+    const aspect=w/h, zoom=1.06, viewSize=13;
     cam.left=-viewSize*aspect/zoom; cam.right=viewSize*aspect/zoom;
     cam.top=viewSize/zoom; cam.bottom=-viewSize/zoom;
     cam.updateProjectionMatrix();
@@ -1125,14 +1125,6 @@
   }
 
   // Pointer down
-  renderer.domElement.addEventListener("wheel", (ev) => {
-    // Zoom with trackpad/mouse wheel
-    ev.preventDefault();
-    const delta = Math.sign(ev.deltaY);
-    if (delta > 0) camZoom /= 1.08; else camZoom *= 1.08;
-    applyZoom();
-  }, { passive: false });
-
   renderer.domElement.addEventListener("pointerdown", (ev) => {
     if (state.action) return setMsg("Busy...");
     if (state.ui.modal) return; // don't click world through modal
@@ -1188,8 +1180,6 @@
     const k=e.key.toLowerCase();
     if(k==="e") doInteract();
     if(k==="escape") closeModal();
-    if(k==="+" || k==="="){ camZoom *= 1.12; applyZoom(); }
-    if(k==="-" || k==="_"){ camZoom /= 1.12; applyZoom(); }
     if(k==="r"){
       localStorage.removeItem(SAVE_KEY);
       state=defaultState();
