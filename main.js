@@ -22,6 +22,8 @@
   const SAVE_KEY = "logger_save_0_0_1";
     const SAVE_SCHEMA_VERSION = 1;
   const GAME_VERSION = "0.0.1";
+  const FPS_CAP = 30;
+  const FRAME_MS = 1000 / FPS_CAP;
 const USERNAME_KEY = "logger_username_0_0_1";
 
   // Username
@@ -110,14 +112,15 @@ const USERNAME_KEY = "logger_username_0_0_1";
           { id: "t4", tx: 18, tz: 26, respawnAt: 0, stumpUntil: 0 },
           { id: "t5", tx: 10, tz: 28, respawnAt: 0, stumpUntil: 0 },
         ],
-            rocks: [
-  { id: "r1", kind: "stone",  tx: 5, tz: 20, respawnAt: 0, stubUntil: 0 },
-  { id: "r2", kind: "stone",  tx: 6, tz: 20, respawnAt: 0, stubUntil: 0 },
-  { id: "r3", kind: "copper", tx: 5, tz: 22, respawnAt: 0, stubUntil: 0 },
-  { id: "r4", kind: "tin",    tx: 6, tz: 22, respawnAt: 0, stubUntil: 0 },
-  { id: "r5", kind: "iron",   tx: 7, tz: 22, respawnAt: 0, stubUntil: 0 },
+                rocks: [
+  { id: "r1", kind: "stone",  tx: 5, tz: 22, respawnAt: 0, stubUntil: 0 },
+  { id: "r2", kind: "stone",  tx: 7, tz: 22, respawnAt: 0, stubUntil: 0 },
+  { id: "r3", kind: "copper", tx: 5, tz: 24, respawnAt: 0, stubUntil: 0 },
+  { id: "r4", kind: "tin",    tx: 7, tz: 24, respawnAt: 0, stubUntil: 0 },
+  { id: "r5", kind: "iron",   tx: 6, tz: 26, respawnAt: 0, stubUntil: 0 },
 ],
 fishingSpots:
+
  [
           { id: "f1", tx: 25, tz: 10 },
           { id: "f2", tx: 24, tz: 12 },
@@ -699,7 +702,7 @@ btn.addEventListener("pointerdown", doBuy);
     m.npcs=[
       { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:13, tz:14, icon:"🧰" },
       { id:"npc_logbuyer", kind:"buyer_logs", name:"Lumber Buyer", tx:11, tz:14, icon:"🪵" },
-      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:15, tz:14, icon:"🐟" },
+      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:18, tz:14, icon:"🐟" },
     ];
   }
   genOverworld();
@@ -1394,6 +1397,10 @@ function syncRocksAndStubs() {
         if (adj(state.player.tx,state.player.tz,sp.tx,sp.tz)===1) return {type:"fish", spot:sp, label:"Fish"};
       }
       const now=performance.now();
+      for (const rk of (state.world.rocks||[])) {
+        if (!rockAlive(rk,now)) continue;
+        if (adj(state.player.tx,state.player.tz,rk.tx,rk.tz)===1) return {type:"rock", rock:rk, label:"Mine Rock"};
+      }
       for (const tr of state.world.trees) {
         if (!treeAlive(tr,now)) continue;
         if (adj(state.player.tx,state.player.tz,tr.tx,tr.tz)===1) return {type:"tree", tree:tr, label:"Chop Tree"};
@@ -1552,11 +1559,11 @@ renderer.domElement.addEventListener("pointermove", (ev) => {
       camPitch += -dy * 0.006;
       camPitch = clamp(camPitch, camPitchMin, camPitchMax);
     } else if (camDragMode === "pan") {
-      const right = new THREE.Vector3(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
-      const fwd   = new THREE.Vector3(Math.cos(camYaw), 0, Math.sin(camYaw));
+      __camTmpRight.set(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
+        __camTmpFwd.set(Math.cos(camYaw), 0, Math.sin(camYaw));
       const panScale = 0.018 * camDist;
-      camPan.addScaledVector(right, -dx * panScale);
-      camPan.addScaledVector(fwd,  dy * panScale);
+      camPan.addScaledVector(__camTmpRight, -dx * panScale);
+      camPan.addScaledVector(__camTmpFwd,  dy * panScale);
     }
     ev.preventDefault();
     return;
@@ -1593,11 +1600,11 @@ renderer.domElement.addEventListener("pointermove", (ev) => {
       if (lastTwoCenter) {
         const dx = cx - lastTwoCenter.x;
         const dy = cy - lastTwoCenter.y;
-        const right = new THREE.Vector3(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
-        const fwd   = new THREE.Vector3(Math.cos(camYaw), 0, Math.sin(camYaw));
+        __camTmpRight.set(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
+        __camTmpFwd.set(Math.cos(camYaw), 0, Math.sin(camYaw));
         const panScale = 0.014 * camDist;
-        camPan.addScaledVector(right, -dx * panScale);
-        camPan.addScaledVector(fwd,  dy * panScale);
+        camPan.addScaledVector(__camTmpRight, -dx * panScale);
+        camPan.addScaledVector(__camTmpFwd,  dy * panScale);
       }
       if (lastPinchDist > 0) {
         const pinchDelta = dist - lastPinchDist;
@@ -1832,6 +1839,10 @@ const camTarget = new THREE.Vector3();      // where the camera looks
 const camTargetSmooth = new THREE.Vector3();
 const camPan = new THREE.Vector3(0,0,0);    // world-space pan offset
 
+  // Reused vectors (avoid GC stutter)
+  const __camTmpRight = new THREE.Vector3();
+  const __camTmpFwd = new THREE.Vector3();
+
 // Input state
 let camDragging = false;
 let camDragMode = null; // "rotate" | "pan"
@@ -1870,7 +1881,29 @@ function updateCamera(dt=0.016) {
 
   // Main loop
   let last=performance.now();
-  function tick(now){
+  let __lastFrameMs = 0;
+let __fpsFrames = 0;
+let __fpsAccum = 0;
+
+function tick(now){
+// FPS cap (30) + FPS counter
+if (__lastFrameMs && (now - __lastFrameMs) < FRAME_MS) {
+  requestAnimationFrame(tick);
+  return;
+}
+const frameDeltaMs = __lastFrameMs ? (now - __lastFrameMs) : FRAME_MS;
+__lastFrameMs = now;
+
+__fpsFrames++;
+__fpsAccum += frameDeltaMs;
+if (__fpsAccum >= 500) {
+  const fps = Math.round((__fpsFrames * 1000) / __fpsAccum);
+  if (window.__fpsEl) window.__fpsEl.textContent = "FPS: " + fps;
+  __fpsFrames = 0;
+  __fpsAccum = 0;
+}
+
+
     const dt=Math.min(0.033,(now-last)/1000);
     last=now;
 

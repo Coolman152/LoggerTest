@@ -177,3 +177,20 @@ kbd { padding: 1px 6px; border: 1px solid rgba(255,255,255,0.25); border-bottom-
   min-height: 18px;
   white-space: pre-wrap;
 }
+
+
+/* FPS counter (top-right) */
+.fpsCounter{
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #fff;
+  pointer-events: none;
+  z-index: 80;
+}
