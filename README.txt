@@ -17,3 +17,6 @@ Upload these files to your GitHub repo ROOT:
 - index.html
 - style.css
 - main.js
+
+
+Patch: custom skill list, moved Tool Trader, re-added Mining (rocks + pickaxe + XP).

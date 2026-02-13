@@ -1,8 +1,10 @@
 (() => {
   const XP_CHOP = 25;
   const XP_FISH = 20;
+  const XP_MINE = 22;
   const CHOP_TIME_MS = 900;
   const FISH_TIME_MS = 1100;
+  const MINE_TIME_MS = 1000;
   const TREE_RESPAWN_MS = 6000;
 
   const TILE = 1.0;
@@ -37,24 +39,37 @@
   const ITEM_DEFS = {
     log:  { name: "Logs", icon: "🪵" },
     fish: { name: "Raw Fish", icon: "🐟" },
+    ore_copper: { name: "Copper Ore", icon: "🟠" },
+    ore_tin: { name: "Tin Ore", icon: "⚪️" },
+    ore_iron: { name: "Iron Ore", icon: "🔩" },
     axe:  { name: "Bronze Axe", icon: "🪓" },
     rod:  { name: "Fishing Rod", icon: "🎣" },
+    pick: { name: "Bronze Pickaxe", icon: "⛏️" },
   };
 
   const SHOP_STOCK = [
     { itemId: "axe", price: 10, desc: "Required to chop trees." },
     { itemId: "rod", price: 12, desc: "Required to fish at spots." },
+    { itemId: "pick", price: 11, desc: "Required to mine rocks." },
   ];
 
   const BUY_PRICES = { log: 2, fish: 3 };
 
   // Skills
   const SKILL_ORDER = [
-    "Attack","Strength","Defence","Ranged","Prayer","Magic",
-    "Runecraft","Construction","Dungeoneering","Hitpoints",
-    "Agility","Herblore","Thieving","Crafting","Fletching","Slayer",
-    "Hunter","Mining","Smithing","Fishing","Cooking","Firemaking",
-    "Woodcutting","Farming"
+    "Attack",
+    "Defence",
+    "Ranged",
+    "Magic",
+    "Construction",
+    "Constitution",
+    "Crafting",
+    "Mining",
+    "Smithing",
+    "Fishing",
+    "Cooking",
+    "Woodcutting",
+    "Farming"
   ];
 
   function xpForLevel(lvl) {
@@ -92,6 +107,12 @@
           { id: "t4", tx: 18, tz: 26, respawnAt: 0, stumpUntil: 0 },
           { id: "t5", tx: 10, tz: 28, respawnAt: 0, stumpUntil: 0 },
         ],
+        rocks: [
+          { id: "r1", kind: "copper", tx: 19, tz: 18, respawnAt: 0, stubUntil: 0 },
+          { id: "r2", kind: "tin", tx: 20, tz: 18, respawnAt: 0, stubUntil: 0 },
+          { id: "r3", kind: "copper", tx: 21, tz: 19, respawnAt: 0, stubUntil: 0 },
+          { id: "r4", kind: "iron", tx: 22, tz: 19, respawnAt: 0, stubUntil: 0 },
+        ],
         fishingSpots: [
           { id: "f1", tx: 25, tz: 10 },
           { id: "f2", tx: 24, tz: 12 },
@@ -123,6 +144,7 @@
       ensureAllSkills(s.skills);
       s.world ??= { trees: [], fishingSpots: [] };
       s.world.trees ??= [];
+      s.world.rocks ??= [];
       s.world.fishingSpots ??= [];
       s.ui ??= { activeTab: null, selectedSkill: "woodcutting", modal: null, modalNpcId: null };
       s.ui.activeTab ??= null;
@@ -489,8 +511,15 @@
 
     m.bushes=[{tx:9,tz:10},{tx:15,tz:10},{tx:10,tz:16},{tx:14,tz:16},{tx:6,tz:13},{tx:18,tz:13}];
 
+    m.rocks=[
+      { id:"r1", kind:"copper", tx:19, tz:18, respawnAt:0 },
+      { id:"r2", kind:"tin", tx:20, tz:18, respawnAt:0 },
+      { id:"r3", kind:"copper", tx:21, tz:19, respawnAt:0 },
+      { id:"r4", kind:"iron", tx:22, tz:19, respawnAt:0 },
+    ];
+
     m.npcs=[
-      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:12, tz:11, icon:"🧰" },
+      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:11, tz:12, icon:"🧰" },
       { id:"npc_logbuyer", kind:"buyer_logs", name:"Lumber Buyer", tx:7, tz:16, icon:"🪵" },
       { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:23, tz:14, icon:"🐟" },
     ];
@@ -530,6 +559,8 @@
   // Solids
   const treeAlive = (t, now=performance.now()) => now >= t.respawnAt;
   const stumpAlive = (t, now=performance.now()) => now < t.stumpUntil;
+  const rockAlive = (r, now=performance.now()) => now >= r.respawnAt;
+  const rockStubAlive = (r, now=performance.now()) => now < r.stubUntil;
 
   function isStructureSolid(m, tx, tz) {
     for (const s of m.structures) {
@@ -554,6 +585,9 @@
     if (state.map==="overworld") {
       for (const tr of state.world.trees) {
         if (tr.tx===tx && tr.tz===tz && (treeAlive(tr) || stumpAlive(tr))) return true;
+      }
+      for (const rk of (state.world.rocks||[])) {
+        if (rk.tx===tx && rk.tz===tz && (rockAlive(rk) || rockStubAlive(rk))) return true;
       }
     }
     return false;
@@ -621,9 +655,11 @@
   let pickables = [];
   let doorPickables = [];
   let treePickables = [];
+  let rockPickables = [];
   let npcPickables = [];
   let fishPickables = [];
   let stumpMeshes = new Map();
+  let rockStubMeshes = new Map();
 
   // Marker
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.14,0.26,28), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.7, side:THREE.DoubleSide }));
@@ -726,7 +762,23 @@
     }
   }
 
-  function makeTreeMesh() {
+  function makeRockMesh(kind="copper") {
+  const g = new THREE.Group();
+  const color = kind==="iron" ? 0x6c7a87 : kind==="tin" ? 0xc9d1d9 : 0xd9893d;
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
+  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), mat);
+  rock.position.y = 0.22;
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32,0.36,0.08,18),
+    new THREE.MeshStandardMaterial({ color:0x2a3647, roughness:1, metalness:0 })
+  );
+  base.position.y = 0.04;
+  g.add(base, rock);
+  return g;
+}
+
+function makeTreeMesh() {
+
     const g = new THREE.Group();
     const foliageMat = new THREE.MeshStandardMaterial({ color:0x2f8a3a, roughness:1, metalness:0 });
     const trunkMat = new THREE.MeshStandardMaterial({ color:0x7a4a2a, roughness:1, metalness:0 });
@@ -806,7 +858,7 @@
 
   function rebuildWorld() {
     clearGroup(tileGroup); clearGroup(decoGroup); clearGroup(structureGroup); clearGroup(resourceGroup); clearGroup(npcGroup);
-    pickables=[]; doorPickables=[]; treePickables=[]; npcPickables=[]; fishPickables=[]; stumpMeshes=new Map();
+    pickables=[]; doorPickables=[]; treePickables=[]; rockPickables=[]; npcPickables=[]; fishPickables=[]; stumpMeshes=new Map(); rockStubMeshes=new Map();
 
     const m = getMap();
 
@@ -911,6 +963,23 @@
       }
       syncTreesAndStumps();
 
+      // Rocks / stubs
+      for (const rk of (state.world.rocks||[])) {
+        const rock = makeRockMesh(rk.kind);
+        rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
+        resourceGroup.add(rock);
+        rockPickables.push(rock);
+
+        const stub = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.26,0.30,0.18,16),
+          new THREE.MeshStandardMaterial({ color:0x3a3f46, roughness:1, metalness:0 })
+        );
+        stub.userData = { kind:"rockstub", rockId: rk.id };
+        resourceGroup.add(stub);
+        rockStubMeshes.set(rk.id, stub);
+      }
+      syncRocksAndStubs();
+
       for (const sp of (state.world.fishingSpots||[])) {
         const mesh = makeFishingSpotMesh(sp);
         const wp = tileToWorld(overworld, sp.tx, sp.tz);
@@ -957,7 +1026,29 @@
     }
   }
 
-  // Raycast
+  
+function syncRocksAndStubs() {
+  if (state.map!=="overworld") return;
+  const m=overworld;
+  const now=performance.now();
+  for (const rockObj of rockPickables) {
+    const rk=(state.world.rocks||[]).find(r=>r.id===rockObj.userData.rockId);
+    if(!rk) continue;
+    const alive = rockAlive(rk, now);
+    const stubOn = rockStubAlive(rk, now);
+    const pos=tileToWorld(m,rk.tx,rk.tz);
+    const y=tileY(m,rk.tx,rk.tz);
+    rockObj.visible = alive;
+    rockObj.position.set(pos.x, y, pos.z);
+    const stub = rockStubMeshes.get(rk.id);
+    if (stub) {
+      stub.visible = (!alive) && stubOn;
+      stub.position.set(pos.x, y + 0.10, pos.z);
+    }
+  }
+}
+
+// Raycast
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   function pickFromEvent(ev) {
@@ -977,6 +1068,7 @@
       while (cur && cur!==scene) {
         if (cur.userData?.kind==="door") return { kind:"door", tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="tree") return { kind:"tree", treeId:cur.userData.treeId, tx:cur.userData.tx, tz:cur.userData.tz };
+        if (cur.userData?.kind==="rock") return { kind:"rock", rockId:cur.userData.rockId, tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="npc") return { kind:"npc", npcId:cur.userData.npcId, tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="fishspot") return { kind:"fishspot", spotId:cur.userData.spotId, tx:cur.userData.tx, tz:cur.userData.tz };
         cur=cur.parent;
@@ -1122,6 +1214,12 @@
       state.action = { kind:"fish", endAt: performance.now()+FISH_TIME_MS, targetId: ctx.spot.id };
       return setMsg("Fishing...");
     }
+    if(ctx.type==="rock"){
+      if(!hasItem("pick")) return setMsg("You need a Pickaxe");
+      state.path=[]; state.moveSeg=null;
+      state.action = { kind:"mine", endAt: performance.now()+MINE_TIME_MS, targetId: ctx.rock.id };
+      return setMsg("Mining...");
+    }
   }
 
   // Pointer down
@@ -1160,7 +1258,17 @@
       return setMsg("Walk to fishing spot");
     }
 
+    if(hit.kind==="rock" && state.map==="overworld"){
+      const rk=(state.world.rocks||[]).find(r=>r.id===hit.rockId);
+      if(!rk || !rockAlive(rk)) return setMsg("No rock");
+      const stand=bestAdjacent(m, rk.tx, rk.tz);
+      if(!stand) return setMsg("Can't reach rock");
+      setMoveGoal(stand.tx, stand.tz);
+      return setMsg("Walk to rock");
+    }
+
     if(hit.kind==="tree" && state.map==="overworld"){
+
       const tr=state.world.trees.find(t=>t.id===hit.treeId);
       if(!tr || !treeAlive(tr)) return setMsg("No tree");
       const stand=bestAdjacent(m, tr.tx, tr.tz);
@@ -1215,7 +1323,26 @@
     saveState(); updateHUD();
   }
 
-  function finishFish() {
+  function finishMine() {
+  const now=performance.now();
+  const rk=(state.world.rocks||[]).find(r=>r.id===state.action.targetId);
+  state.action=null;
+  if(!rk) return;
+
+  const itemId = rk.kind==="iron" ? "ore_iron" : rk.kind==="tin" ? "ore_tin" : "ore_copper";
+  addItem(itemId, 1);
+  addXp("mining", XP_MINE);
+  spawnXpPopup(XP_MINE, "⛏️");
+  setMsg("You mine " + ITEM_DEFS[itemId].name);
+
+  rk.respawnAt = now + ROCK_RESPAWN_MS;
+  rk.stubUntil = rk.respawnAt;
+
+  saveState(); updateHUD();
+}
+
+function finishFish() {
+
     state.action=null;
     const added=addItemToInv("fish");
     setMsg(added ? "You catch a fish" : "Inventory full (fish dropped)");
@@ -1314,10 +1441,10 @@
   const baseBodyY=body.position.y;
   function animateAction(now) {
     if(!state.action){ body.position.y=baseBodyY; return; }
-    const total = state.action.kind==="fish" ? FISH_TIME_MS : CHOP_TIME_MS;
+    const total = state.action.kind==="fish" ? FISH_TIME_MS : (state.action.kind==="mine" ? MINE_TIME_MS : CHOP_TIME_MS);
     const s = Math.max(0, Math.min(1, 1 - (state.action.endAt - now)/total));
     body.position.y = baseBodyY + Math.sin(s*Math.PI*4)*0.03;
-    player.rotation.y += (state.action.kind==="fish")?0.04:0.06;
+    player.rotation.y += (state.action.kind==="fish")?0.04:(state.action.kind==="mine"?0.05:0.06);
   }
 
   function updateCamera() {
@@ -1339,12 +1466,30 @@
 
     if(state.action && now>=state.action.endAt){
       if(state.action.kind==="chop") finishChop();
+      if(state.action.kind==="mine") finishMine();
       if(state.action.kind==="fish") finishFish();
     }
 
     stepMovement(dt);
     animateAction(now);
-    if(state.map==="overworld") syncTreesAndStumps();
+    if(state.map==="overworld") { syncTreesAndStumps(); syncRocksAndStubs(); }
+
+      // Rocks / stubs
+      for (const rk of (state.world.rocks||[])) {
+        const rock = makeRockMesh(rk.kind);
+        rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
+        resourceGroup.add(rock);
+        rockPickables.push(rock);
+
+        const stub = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.26,0.30,0.18,16),
+          new THREE.MeshStandardMaterial({ color:0x3a3f46, roughness:1, metalness:0 })
+        );
+        stub.userData = { kind:"rockstub", rockId: rk.id };
+        resourceGroup.add(stub);
+        rockStubMeshes.set(rk.id, stub);
+      }
+      syncRocksAndStubs();
     updatePopups(now);
 
     const ctx=getContextAction();
