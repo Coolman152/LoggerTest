@@ -2,63 +2,98 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Logger v0.0.1</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="topbar">
-    <div class="title">Logger v0.0.1</div>
-    <div class="tabs">
-      <button id="btnSkills" class="tabbtn" type="button">Skills</button>
-      <button id="btnInv" class="tabbtn" type="button">Inventory</button>
-      <button id="btnZoomOut" class="tabbtn" type="button" title="Zoom out">−</button>
-      <button id="btnZoomIn" class="tabbtn" type="button" title="Zoom in">+</button>
+  <div id="ui">
+    <div class="toprow">
+      <div class="title">Logger v0.0.1</div>
+      <div class="tabs">
+        <button id="btnSkills" class="tabbtn" type="button">Skills</button>
+        <button id="btnInv" class="tabbtn" type="button">Inventory</button>
+        <button id="btnZoomOut" class="tabbtn" type="button" title="Zoom out">−</button>
+        <button id="btnZoomIn" class="tabbtn" type="button" title="Zoom in">+</button>
+      </div>
     </div>
-  </div>
 
-  <div id="gameWrap">
-    <div id="hud">
-      <div id="hint">Tap/click to move • E interact • R reset</div>
-      <div id="msg"></div>
+    <div class="hudrow">
+      <div id="context" class="context"></div>
+      <div id="msg" class="msg"></div>
+      <div id="coinsHud" class="coinsHud"></div>
     </div>
 
     <div id="panelSkills" class="panel hidden">
-      <div class="panelHeader">
-        <div class="panelTitle">Skills</div>
-        <button class="panelClose" id="closeSkills" type="button">✕</button>
+      <div class="panelTitle">Skills</div>
+      <div class="skillsWrap">
+        <div id="skillsList" class="skillsList"></div>
+        <div id="skillDetail" class="skillDetail">
+          <div class="skillName" id="skillName">Select a skill</div>
+          <div class="skillMeta" id="skillMeta"></div>
+          <div class="skillBar">
+            <div id="skillBarFill" class="skillBarFill"></div>
+          </div>
+        </div>
       </div>
-      <div id="skillsList"></div>
-      <div id="skillDetail" class="skillDetail hidden"></div>
     </div>
 
     <div id="panelInv" class="panel hidden">
-      <div class="panelHeader">
-        <div class="panelTitle">Inventory</div>
-        <button class="panelClose" id="closeInv" type="button">✕</button>
+      <div class="panelTitle">Inventory</div>
+      <div class="invTop">
+        <div id="invMeta" class="invMeta"></div>
+        <div id="coins" class="coins"></div>
       </div>
-      <div id="invMeta"></div>
       <div id="invGrid" class="invGrid"></div>
     </div>
 
-    <div id="modalOverlay" class="modalOverlay hidden">
-      <div class="modalCard">
-        <div class="modalHeader">
-          <div id="modalTitle" class="modalTitle">Modal</div>
-          <button id="modalClose" class="modalClose" type="button">✕</button>
+    <div class="hint">
+      Tap/click to move • Tap trees/doors/NPCs • <kbd>E</kbd> interact • <kbd>R</kbd> reset
+    </div>
+  </div>
+
+  <!-- Fullscreen modal overlay for NPC interactions -->
+  <div id="modalOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div id="modalTitle" class="modalTitle">Modal</div>
+        <button id="btnCloseModal" class="closeX" type="button" aria-label="Close">✕</button>
+      </div>
+
+      <div id="modalShop" class="modalBody hidden">
+        <div class="modalHint">Tap an item to buy it.</div>
+        <div id="shopList" class="shopList"></div>
+      </div>
+
+      <div id="modalSell" class="modalBody hidden">
+        <div class="modalHint">Tap an item to sell one. Use “Sell all” to sell everything that NPC buys.</div>
+        <div class="sellRow">
+          <button id="btnSellAll" class="actionBtn" type="button">Sell all</button>
+          <div id="sellInfo" class="sellInfo"></div>
         </div>
-        <div id="modalShop" class="modalSection hidden"></div>
-        <div id="modalSell" class="modalSection hidden"></div>
-        <div id="modalBank" class="modalSection hidden"></div>
-        <div id="modalMsg" class="modalMsg"></div>
+        <div id="sellList" class="shopList"></div>
+      </div>
+
+      <div id="modalBank" class="modalBody hidden">
+        <div class="modalHint">Tap an item in Inventory to deposit. Tap an item in Bank to withdraw.</div>
+        <div class="bankWrap">
+          <div>
+            <div class="bankTitle">Inventory</div>
+            <div id="bankInvMeta" class="invMeta"></div>
+            <div id="bankInvGrid" class="invGrid"></div>
+          </div>
+          <div>
+            <div class="bankTitle">Bank</div>
+            <div id="bankMeta" class="invMeta"></div>
+            <div id="bankGrid" class="invGrid"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <noscript style="color:white;padding:12px;display:block;background:#111;">
-    This game requires JavaScript enabled.
-  </noscript>
+  <canvas id="game"></canvas>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="main.js"></script>
