@@ -1,13 +1,14 @@
-Logger v0.0.1
+Logger v0.0.1 — Clean Deploy Pack
 
-Re-implemented Mining cleanly:
-- Buy a ⛏️ Bronze Pickaxe from Tool Trader
-- Mine rocks (Copper/Tin/Iron) near the village outskirts
-- Ores stack in inventory/bank
-- Rocks deplete -> stub -> respawn
-- Mining XP + popup
+This pack is designed to eliminate:
+- Uncaught SyntaxError: Invalid or unexpected token (RPG/?v=123:123)
 
-Controls:
-- Tap/click to move
-- E to interact
-- Zoom: + / − buttons, wheel (if supported), or + / - keys
+How:
+- No inline scripts in index.html (copy/paste often introduces bad tokens)
+- Three.js loaded from jsDelivr
+- favicon 404 prevented
+
+Upload these files to your GitHub repo root:
+- index.html
+- style.css
+- main.js

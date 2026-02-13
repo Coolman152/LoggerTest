@@ -1,8 +1,5 @@
 (() => {
   const XP_CHOP = 25;
-  const XP_MINE = 22;
-  const MINE_TIME_MS = 1000;
-  const ROCK_RESPAWN_MS = 6500;
   const XP_FISH = 20;
   const CHOP_TIME_MS = 900;
   const FISH_TIME_MS = 1100;
@@ -38,20 +35,15 @@
 
   // Items
   const ITEM_DEFS = {
-    log:  { name: "Logs", icon: "🪵", stackable: true },
-    fish: { name: "Raw Fish", icon: "🐟", stackable: true },
-    ore_iron: { name: "Iron Ore", icon: "🔩", stackable: true },
-    ore_tin: { name: "Tin Ore", icon: "⚪️", stackable: true },
-    ore_copper: { name: "Copper Ore", icon: "🟠", stackable: true },
-    axe:  { name: "Bronze Axe", icon: "🪓", stackable: false },
-    rod:  { name: "Fishing Rod", icon: "🎣", stackable: false },
-    pick: { name: "Bronze Pickaxe", icon: "⛏️", stackable: false },
+    log:  { name: "Logs", icon: "🪵" },
+    fish: { name: "Raw Fish", icon: "🐟" },
+    axe:  { name: "Bronze Axe", icon: "🪓" },
+    rod:  { name: "Fishing Rod", icon: "🎣" },
   };
 
   const SHOP_STOCK = [
     { itemId: "axe", price: 10, desc: "Required to chop trees." },
     { itemId: "rod", price: 12, desc: "Required to fish at spots." },
-    { itemId: "pick", price: 11, desc: "Required to mine rocks." },
   ];
 
   const BUY_PRICES = { log: 2, fish: 3 };
@@ -86,10 +78,8 @@
       action: null, // { kind, endAt, targetId }
       pendingDoor: null,
       pendingNpc: null,
-      inv: { items: [], coins: 25 },  // items = stack list: [{id, qty}]
-
-      bank: { items: [] }, // items = stack list: [{id, qty}]
-
+      inv: { items: [], coins: 25 },
+      bank: { items: [] },
       skills,
       world: {
         trees: [
@@ -103,12 +93,6 @@
           { id: "f1", tx: 25, tz: 10 },
           { id: "f2", tx: 24, tz: 12 },
           { id: "f3", tx: 27, tz: 12 },
-        ],
-        rocks: [
-          { id: "r1", kind: "copper", tx: 18, tz: 21, respawnAt: 0, stubUntil: 0 },
-          { id: "r2", kind: "tin",    tx: 19, tz: 22, respawnAt: 0, stubUntil: 0 },
-          { id: "r3", kind: "copper", tx: 20, tz: 21, respawnAt: 0, stubUntil: 0 },
-          { id: "r4", kind: "iron",   tx: 21, tz: 23, respawnAt: 0, stubUntil: 0 },
         ]
       },
       ui: { activeTab: null, selectedSkill: "woodcutting", modal: null, modalNpcId: null }
@@ -137,13 +121,10 @@
       s.world ??= { trees: [], fishingSpots: [] };
       s.world.trees ??= [];
       s.world.fishingSpots ??= [];
-      s.world.rocks ??= [];
       s.ui ??= { activeTab: null, selectedSkill: "woodcutting", modal: null, modalNpcId: null };
       s.ui.activeTab ??= null;
       s.ui.selectedSkill ??= "woodcutting";
       s.ui.modal ??= null;
-      s.inv.items = normalizeStacks(s.inv.items);
-      s.bank.items = normalizeStacks(s.bank.items);
       s.ui.modalNpcId ??= null;
       return s;
     } catch {
@@ -155,120 +136,38 @@
   function saveState() { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
   setInterval(saveState, 5000);
 
-  // Inventory / Bank helpers (STACKS)
-// inv.items and bank.items store stacks: { id: string, qty: number }
-// - Resources stack (logs, fish, etc.)
-// - Tools do NOT stack (each tool consumes a slot)
-
-function normalizeStacks(list) {
-  // Accept legacy formats and normalize to [{id, qty}]
-  if (!Array.isArray(list)) return [];
-  if (list.length === 0) return [];
-  if (typeof list[0] === "string") {
-    // legacy array of itemIds
-    const out = [];
-    for (const id of list) {
-      const def = ITEM_DEFS[id];
-      if (!def) continue;
-      if (def.stackable) {
-        const s = out.find(x => x.id === id);
-        if (s) s.qty += 1;
-        else out.push({ id, qty: 1 });
-      } else {
-        out.push({ id, qty: 1 });
-      }
-    }
-    return out;
-  }
-  // already stacks
-  return list
-    .filter(x => x && typeof x.id === "string" && typeof x.qty === "number")
-    .map(x => ({ id: x.id, qty: Math.max(1, Math.floor(x.qty)) }));
-}
-
-function stacksUsed(list) { return list.length; }
-
-const invUsed = () => stacksUsed(state.inv.items);
-const invFree = () => INVENTORY_CAPACITY - invUsed();
-
-function findStack(list, id) { return list.find(s => s.id === id) || null; }
-
-const hasItem = (id) => {
-  const def = ITEM_DEFS[id];
-  if (!def) return false;
-  const s = findStack(state.inv.items, id);
-  return !!s && s.qty > 0;
-};
-
-function addItemToList(list, id, qty=1) {
-  const def = ITEM_DEFS[id];
-  if (!def) return false;
-  qty = Math.max(1, Math.floor(qty));
-  if (def.stackable) {
-    const s = findStack(list, id);
-    if (s) { s.qty += qty; return true; }
-    // new stack needs a slot
-    list.push({ id, qty });
+  // Inventory / Bank helpers
+  const invUsed = () => state.inv.items.length;
+  const invFree = () => INVENTORY_CAPACITY - invUsed();
+  const hasItem = (id) => state.inv.items.includes(id);
+  const addItemToInv = (id) => {
+    if (!ITEM_DEFS[id]) return false;
+    if (invUsed() >= INVENTORY_CAPACITY) return false;
+    state.inv.items.push(id);
     return true;
-  } else {
-    // each qty is a new slot
-    for (let i=0; i<qty; i++) list.push({ id, qty: 1 });
+  };
+  const removeOneFromInv = (id) => {
+    const i = state.inv.items.indexOf(id);
+    if (i < 0) return false;
+    state.inv.items.splice(i, 1);
     return true;
-  }
-}
-
-function removeItemFromList(list, id, qty=1) {
-  const def = ITEM_DEFS[id];
-  if (!def) return false;
-  qty = Math.max(1, Math.floor(qty));
-  if (def.stackable) {
-    const s = findStack(list, id);
-    if (!s || s.qty < qty) return false;
-    s.qty -= qty;
-    if (s.qty <= 0) {
-      const idx = list.indexOf(s);
-      if (idx >= 0) list.splice(idx, 1);
-    }
+  };
+  const addCoins = (n) => (state.inv.coins += n);
+  const spendCoins = (n) => {
+    if (state.inv.coins < n) return false;
+    state.inv.coins -= n;
     return true;
-  } else {
-    // remove qty separate tool entries
-    let removed = 0;
-    for (let i=list.length-1; i>=0 && removed<qty; i--) {
-      if (list[i].id === id) { list.splice(i,1); removed++; }
-    }
-    return removed === qty;
-  }
-}
+  };
 
-function addItemToInv(id, qty=1) {
-  const def = ITEM_DEFS[id];
-  if (!def) return false;
-  // Capacity check: stackable needs 1 slot if new stack; non-stack needs qty slots
-  if (def.stackable) {
-    const exists = !!findStack(state.inv.items, id);
-    if (!exists && invFree() <= 0) return false;
-    return addItemToList(state.inv.items, id, qty);
-  } else {
-    if (invFree() < qty) return false;
-    return addItemToList(state.inv.items, id, qty);
-  }
-}
+  const addItemToBank = (id) => state.bank.items.push(id);
+  const removeOneFromBank = (id) => {
+    const i = state.bank.items.indexOf(id);
+    if (i < 0) return false;
+    state.bank.items.splice(i, 1);
+    return true;
+  };
 
-function removeOneFromInv(id) { return removeItemFromList(state.inv.items, id, 1); }
-
-const addCoins = (n) => (state.inv.coins += n);
-const spendCoins = (n) => {
-  if (state.inv.coins < n) return false;
-  state.inv.coins -= n;
-  return true;
-};
-
-// Bank
-function bankUsed() { return stacksUsed(state.bank.items); }
-function addItemToBank(id, qty=1) { return addItemToList(state.bank.items, id, qty); }
-function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id, 1); }
-
-// UI elements
+  // UI elements
   const btnSkills = document.getElementById("btnSkills");
   const btnInv = document.getElementById("btnInv");
   const btnZoomIn = document.getElementById("btnZoomIn");
@@ -356,38 +255,18 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     skillBarFillEl.style.width = (sk.lvl>=99?100:pct*100)+"%";
   }
 
-  function renderInventoryGrid(gridEl, stacks, capacity, onClick=null) {
+  function renderInventoryGrid(gridEl, items, capacity, onClick=null) {
     gridEl.innerHTML = "";
-    const slots = [...stacks];
+    const slots = [...items];
     while (slots.length < capacity) slots.push(null);
-
-    for (const st of slots.slice(0, capacity)) {
-      const wrap = document.createElement("div"); 
-      wrap.className = "invSlotWrap";
-
-      const slot = document.createElement("div"); 
-      slot.className = "invSlot" + (st ? "" : " empty");
-
-      if (!st) {
-        slot.textContent = "·";
-      } else {
-        const def = ITEM_DEFS[st.id];
-        slot.textContent = def?.icon || "❓";
-
-        // qty badge for stacks with qty > 1 OR stackable resources
-        if ((def?.stackable && st.qty >= 1) || st.qty > 1) {
-          const badge = document.createElement("div");
-          badge.className = "qtyBadge";
-          badge.textContent = String(st.qty);
-          wrap.appendChild(badge);
-        }
-
-        if (onClick) {
-          slot.style.cursor = "pointer";
-          slot.addEventListener("click", () => onClick(st.id));
-        }
+    for (const it of slots.slice(0, capacity)) {
+      const wrap = document.createElement("div"); wrap.className="invSlotWrap";
+      const slot = document.createElement("div"); slot.className="invSlot"+(it?"":" empty");
+      slot.textContent = it ? (ITEM_DEFS[it]?.icon || "❓") : "·";
+      if (it && onClick) {
+        slot.style.cursor="pointer";
+        slot.addEventListener("click", () => onClick(it));
       }
-
       wrap.appendChild(slot);
       gridEl.appendChild(wrap);
     }
@@ -461,8 +340,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     sellListEl.innerHTML = "";
     const def = ITEM_DEFS[buysId];
     const price = BUY_PRICES[buysId] ?? 0;
-    const st = state.inv.items.find(s=>s.id===buysId);
-    const count = st ? st.qty : 0;
+    const count = state.inv.items.filter(x=>x===buysId).length;
     sellInfoEl.textContent = `${def.icon} ${def.name} — ${price} coins each — You have ${count}`;
 
     const row = document.createElement("div"); row.className="shopItem";
@@ -485,10 +363,9 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     sellListEl.appendChild(row);
 
     btnSellAll.onclick = () => {
-      const st2 = state.inv.items.find(s=>s.id===buysId);
-      const n = st2 ? st2.qty : 0;
+      const n = state.inv.items.filter(x=>x===buysId).length;
       if (n <= 0) return setMsg("Nothing to sell");
-      removeItemFromList(state.inv.items, buysId, n);
+      state.inv.items = state.inv.items.filter(x=>x!==buysId);
       addCoins(n*price);
       setMsg(`Sold ${n} ${def.name}`);
       renderModal(); renderInvPanel(); updateHUD(); saveState();
@@ -647,8 +524,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
   // Solids
   const treeAlive = (t, now=performance.now()) => now >= t.respawnAt;
   const stumpAlive = (t, now=performance.now()) => now < t.stumpUntil;
-  const rockAlive = (r, now=performance.now()) => now >= r.respawnAt;
-  const stubAlive = (r, now=performance.now()) => now < r.stubUntil;
 
   function isStructureSolid(m, tx, tz) {
     for (const s of m.structures) {
@@ -674,9 +549,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
       for (const tr of state.world.trees) {
         if (tr.tx===tx && tr.tz===tz && (treeAlive(tr) || stumpAlive(tr))) return true;
       }
-      for (const rk of (state.world.rocks||[])) {
-        if (rk.tx===tx && rk.tz===tz && (rockAlive(rk) || stubAlive(rk))) return true;
-      }
     }
     return false;
   }
@@ -691,13 +563,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const scene = new THREE.Scene();
-    // DBG_CUBE: if you can see a spinning cube + axes, renderer is working.
-    scene.background = new THREE.Color(0x24344f);
-    const axes = new THREE.AxesHelper(2);
-    scene.add(axes);
-    const dbgCube = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
-    dbgCube.position.set(0,0.6,0);
-    scene.add(dbgCube);
   scene.background = new THREE.Color(0x0f1724);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.95));
   const dir = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -756,11 +621,9 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
   let pickables = [];
   let doorPickables = [];
   let treePickables = [];
-  let rockPickables = [];
   let npcPickables = [];
   let fishPickables = [];
   let stumpMeshes = new Map();
-  let rockStubMeshes = new Map();
 
   // Marker
   const marker = new THREE.Mesh(new THREE.RingGeometry(0.14,0.26,28), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.7, side:THREE.DoubleSide }));
@@ -863,23 +726,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     }
   }
 
-  function makeRockMesh(kind='copper') {
-    const g = new THREE.Group();
-    const color = kind==='iron' ? 0x6c7a87 : kind==='tin' ? 0xc9d1d9 : 0xd9893d;
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), mat);
-    rock.position.y = 0.22;
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.32,0.36,0.08,18),
-      new THREE.MeshStandardMaterial({ color:0x2a3647, roughness:1, metalness:0 })
-    );
-    base.position.y = 0.04;
-    g.add(base, rock);
-    return g;
-  }
-
   function makeTreeMesh() {
-
     const g = new THREE.Group();
     const foliageMat = new THREE.MeshStandardMaterial({ color:0x2f8a3a, roughness:1, metalness:0 });
     const trunkMat = new THREE.MeshStandardMaterial({ color:0x7a4a2a, roughness:1, metalness:0 });
@@ -959,7 +806,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
 
   function rebuildWorld() {
     clearGroup(tileGroup); clearGroup(decoGroup); clearGroup(structureGroup); clearGroup(resourceGroup); clearGroup(npcGroup);
-    pickables=[]; doorPickables=[]; treePickables=[]; rockPickables=[]; npcPickables=[]; fishPickables=[]; stumpMeshes=new Map(); rockStubMeshes=new Map();
+    pickables=[]; doorPickables=[]; treePickables=[]; npcPickables=[]; fishPickables=[]; stumpMeshes=new Map();
 
     const m = getMap();
 
@@ -1064,23 +911,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
       }
       syncTreesAndStumps();
 
-      // Rocks / stubs
-      for (const rk of (state.world.rocks||[])) {
-        const rock = makeRockMesh(rk.kind);
-        rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
-        resourceGroup.add(rock);
-        rockPickables.push(rock);
-
-        const stub = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.26,0.30,0.18,16),
-          new THREE.MeshStandardMaterial({ color:0x3a3f46, roughness:1, metalness:0 })
-        );
-        stub.userData = { kind:"rockstub", rockId: rk.id };
-        resourceGroup.add(stub);
-        rockStubMeshes.set(rk.id, stub);
-      }
-      syncRocksAndStubs();
-
       for (const sp of (state.world.fishingSpots||[])) {
         const mesh = makeFishingSpotMesh(sp);
         const wp = tileToWorld(overworld, sp.tx, sp.tz);
@@ -1127,28 +957,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     }
   }
 
-  function syncRocksAndStubs() {
-  if (state.map!=="overworld") return;
-  const m=overworld;
-  const now=performance.now();
-  for (const rockObj of rockPickables) {
-    const rk=(state.world.rocks||[]).find(r=>r.id===rockObj.userData.rockId);
-    if(!rk) continue;
-    const alive=rockAlive(rk,now);
-    const stubOn=stubAlive(rk,now);
-    const pos=tileToWorld(m,rk.tx,rk.tz);
-    const y=tileY(m,rk.tx,rk.tz);
-    rockObj.visible=alive;
-    rockObj.position.set(pos.x,y,pos.z);
-    const stub=rockStubMeshes.get(rk.id);
-    if (stub) {
-      stub.visible = (!alive) && stubOn;
-      stub.position.set(pos.x, y+0.10, pos.z);
-    }
-  }
-}
-
-// Raycast
+  // Raycast
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   function pickFromEvent(ev) {
@@ -1159,11 +968,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     pointer.y = -(y*2-1);
     raycaster.setFromCamera(pointer, cam);
 
-    const objects = pickables.concat(doorPickables)
-      .concat(treePickables.filter(t=>t.visible))
-      .concat(rockPickables.filter(r=>r.visible))
-      .concat(npcPickables)
-      .concat(fishPickables);
+    const objects = pickables.concat(doorPickables).concat(treePickables.filter(t=>t.visible)).concat(npcPickables).concat(fishPickables);
     const hits = raycaster.intersectObjects(objects, true);
     if (!hits.length) return null;
 
@@ -1172,7 +977,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
       while (cur && cur!==scene) {
         if (cur.userData?.kind==="door") return { kind:"door", tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="tree") return { kind:"tree", treeId:cur.userData.treeId, tx:cur.userData.tx, tz:cur.userData.tz };
-        if (cur.userData?.kind==="rock") return { kind:"rock", rockId:cur.userData.rockId, tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="npc") return { kind:"npc", npcId:cur.userData.npcId, tx:cur.userData.tx, tz:cur.userData.tz };
         if (cur.userData?.kind==="fishspot") return { kind:"fishspot", spotId:cur.userData.spotId, tx:cur.userData.tx, tz:cur.userData.tz };
         cur=cur.parent;
@@ -1278,10 +1082,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
         if (adj(state.player.tx,state.player.tz,sp.tx,sp.tz)===1) return {type:"fish", spot:sp, label:"Fish"};
       }
       const now=performance.now();
-      for (const rk of (state.world.rocks||[])) {
-        if (!rockAlive(rk,now)) continue;
-        if (adj(state.player.tx,state.player.tz,rk.tx,rk.tz)===1) return {type:"rock", rock:rk, label:"Mine Rock"};
-      }
       for (const tr of state.world.trees) {
         if (!treeAlive(tr,now)) continue;
         if (adj(state.player.tx,state.player.tz,tr.tx,tr.tz)===1) return {type:"tree", tree:tr, label:"Chop Tree"};
@@ -1321,12 +1121,6 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
       state.path=[]; state.moveSeg=null;
       state.action = { kind:"fish", endAt: performance.now()+FISH_TIME_MS, targetId: ctx.spot.id };
       return setMsg("Fishing...");
-    }
-    if(ctx.type==="rock"){
-      if(!hasItem("pick")) return setMsg("You need a Pickaxe");
-      state.path=[]; state.moveSeg=null;
-      state.action = { kind:"mine", endAt: performance.now()+MINE_TIME_MS, targetId: ctx.rock.id };
-      return setMsg("Mining...");
     }
   }
 
@@ -1374,17 +1168,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
       return setMsg("Walk to fishing spot");
     }
 
-    if(hit.kind==="rock" && state.map==="overworld"){
-      const rk=(state.world.rocks||[]).find(r=>r.id===hit.rockId);
-      if(!rk || !rockAlive(rk)) return setMsg("No rock");
-      const stand=bestAdjacent(m, rk.tx, rk.tz);
-      if(!stand) return setMsg("Can't reach rock");
-      setMoveGoal(stand.tx, stand.tz);
-      return setMsg("Walk to rock");
-    }
-
     if(hit.kind==="tree" && state.map==="overworld"){
-
       const tr=state.world.trees.find(t=>t.id===hit.treeId);
       if(!tr || !treeAlive(tr)) return setMsg("No tree");
       const stand=bestAdjacent(m, tr.tx, tr.tz);
@@ -1441,27 +1225,7 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
     saveState(); updateHUD();
   }
 
-  function finishMine() {
-  const now=performance.now();
-  const rk=(state.world.rocks||[]).find(r=>r.id===state.action.targetId);
-  state.action=null;
-  if(!rk) return;
-
-  const itemId = rk.kind === "iron" ? "ore_iron" : rk.kind === "tin" ? "ore_tin" : "ore_copper";
-  const added = addItemToInv(itemId);
-  setMsg(added ? `You mine ${ITEM_DEFS[itemId].name}` : "Inventory full (ore dropped)");
-  addXp("mining", XP_MINE);
-  spawnXpPopup(XP_MINE, "⛏️");
-  if (Math.random() < 0.25) addCoins(1);
-
-  rk.respawnAt = now + ROCK_RESPAWN_MS;
-  rk.stubUntil = rk.respawnAt;
-
-  saveState(); updateHUD();
-}
-
-function finishFish() {
-
+  function finishFish() {
     state.action=null;
     const added=addItemToInv("fish");
     setMsg(added ? "You catch a fish" : "Inventory full (fish dropped)");
@@ -1560,10 +1324,10 @@ function finishFish() {
   const baseBodyY=body.position.y;
   function animateAction(now) {
     if(!state.action){ body.position.y=baseBodyY; return; }
-    const total = state.action.kind==="fish" ? FISH_TIME_MS : (state.action.kind==="mine" ? MINE_TIME_MS : CHOP_TIME_MS);
+    const total = state.action.kind==="fish" ? FISH_TIME_MS : CHOP_TIME_MS;
     const s = Math.max(0, Math.min(1, 1 - (state.action.endAt - now)/total));
     body.position.y = baseBodyY + Math.sin(s*Math.PI*4)*0.03;
-    player.rotation.y += (state.action.kind==="fish")?0.04:(state.action.kind==="mine"?0.05:0.06);
+    player.rotation.y += (state.action.kind==="fish")?0.04:0.06;
   }
 
   function updateCamera() {
@@ -1585,30 +1349,12 @@ function finishFish() {
 
     if(state.action && now>=state.action.endAt){
       if(state.action.kind==="chop") finishChop();
-      if(state.action.kind==="mine") finishMine();
       if(state.action.kind==="fish") finishFish();
     }
 
     stepMovement(dt);
     animateAction(now);
-    if(state.map==="overworld") { syncTreesAndStumps(); syncRocksAndStubs(); }
-
-      // Rocks / stubs
-      for (const rk of (state.world.rocks||[])) {
-        const rock = makeRockMesh(rk.kind);
-        rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
-        resourceGroup.add(rock);
-        rockPickables.push(rock);
-
-        const stub = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.26,0.30,0.18,16),
-          new THREE.MeshStandardMaterial({ color:0x3a3f46, roughness:1, metalness:0 })
-        );
-        stub.userData = { kind:"rockstub", rockId: rk.id };
-        resourceGroup.add(stub);
-        rockStubMeshes.set(rk.id, stub);
-      }
-      syncRocksAndStubs();
+    if(state.map==="overworld") syncTreesAndStumps();
     updatePopups(now);
 
     const ctx=getContextAction();
