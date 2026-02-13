@@ -145,13 +145,26 @@
       s.world ??= { trees: [], fishingSpots: [] };
       s.world.trees ??= [];
       s.world.rocks ??= [];
+// Migration: seed default rocks if missing (older saves won't have them)
+const seedRocksIfMissing = () => {
+  if (!s.world.rocks || s.world.rocks.length===0) {
+    s.world.rocks = [
+      { id: "r1", kind: "copper", tx: 19, tz: 18, respawnAt: 0, stubUntil: 0 },
+      { id: "r2", kind: "tin",    tx: 20, tz: 18, respawnAt: 0, stubUntil: 0 },
+      { id: "r3", kind: "copper", tx: 21, tz: 19, respawnAt: 0, stubUntil: 0 },
+      { id: "r4", kind: "iron",   tx: 22, tz: 19, respawnAt: 0, stubUntil: 0 },
+    ];
+  }
+};
+
       s.world.fishingSpots ??= [];
       s.ui ??= { activeTab: null, selectedSkill: "woodcutting", modal: null, modalNpcId: null };
       s.ui.activeTab ??= null;
       s.ui.selectedSkill ??= "woodcutting";
       s.ui.modal ??= null;
       s.ui.modalNpcId ??= null;
-      return s;
+            seedRocksIfMissing();
+return s;
     } catch {
       return defaultState();
     }
@@ -344,13 +357,19 @@
       const btn = document.createElement("button"); btn.className="actionBtn"; btn.type="button";
       btn.textContent = `Buy (${s.price} 🪙)`;
       btn.disabled = (state.inv.coins < s.price) || (invFree() <= 0);
-      btn.addEventListener("click", () => {
-        if (invFree() <= 0) return setMsg("Inventory full");
-        if (!spendCoins(s.price)) return setMsg("Not enough coins");
-        addItemToInv(s.itemId);
-        setMsg(`Bought ${def.name}`);
-        renderModal(); renderInvPanel(); updateHUD(); saveState();
-      });
+      const doBuy = (ev) => {
+  // Works for mouse + touch
+  ev?.preventDefault?.();
+  ev?.stopPropagation?.();
+  if (invFree() <= 0) return setMsg("Inventory full");
+  if (!spendCoins(s.price)) return setMsg("Not enough coins");
+  addItemToInv(s.itemId);
+  setMsg(`Bought ${def.name}`);
+  renderModal(); renderInvPanel(); updateHUD(); saveState();
+};
+btn.addEventListener("click", doBuy);
+btn.addEventListener("pointerdown", doBuy);
+
 
       row.append(left,btn);
       shopListEl.appendChild(row);
@@ -374,6 +393,8 @@
     btn.textContent = `Sell 1 (+${price} 🪙)`;
     btn.disabled = count <= 0;
     btn.addEventListener("click", () => {
+        // click for mouse
+
       if (!removeOneFromInv(buysId)) return;
       addCoins(price);
       setMsg(`Sold 1 ${def.name}`);
@@ -519,9 +540,9 @@
     ];
 
     m.npcs=[
-      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:11, tz:12, icon:"🧰" },
-      { id:"npc_logbuyer", kind:"buyer_logs", name:"Lumber Buyer", tx:7, tz:16, icon:"🪵" },
-      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:23, tz:14, icon:"🐟" },
+      { id:"npc_shop", kind:"shop", name:"Tool Trader", tx:13, tz:14, icon:"🧰" },
+      { id:"npc_logbuyer", kind:"buyer_logs", name:"Lumber Buyer", tx:11, tz:14, icon:"🪵" },
+      { id:"npc_fishbuyer", kind:"buyer_fish", name:"Fishmonger", tx:15, tz:14, icon:"🐟" },
     ];
   }
   genOverworld();
