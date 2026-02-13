@@ -1503,7 +1503,6 @@ function handleWorldTap(ev) {
       if(isSolid(m, hit.tx, hit.tz)) return setMsg("Can't walk there");
       setMoveGoal(hit.tx, hit.tz);
     }
-  })
   }
 
 renderer.domElement.addEventListener("pointerdown", (ev) => {
@@ -1844,8 +1843,6 @@ const touches = new Map(); // id -> {x,y, sx,sy}
 let touchMode = null;      // "rotate" | "panzoom"
 let lastPinchDist = 0;
 let lastTwoCenter = null;
-
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
 
 function updateCamera(dt=0.016) {
   // Anchor target to player (slightly above feet) + pan
