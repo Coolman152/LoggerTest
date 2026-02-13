@@ -20,7 +20,9 @@
   const BANK_VIEW_SLOTS = 30;
 
   const SAVE_KEY = "logger_save_0_0_1";
-  const USERNAME_KEY = "logger_username_0_0_1";
+    const SAVE_SCHEMA_VERSION = 1;
+  const GAME_VERSION = "0.0.1";
+const USERNAME_KEY = "logger_username_0_0_1";
 
   // Username
   function getUsername() {
@@ -42,6 +44,7 @@
     ore_copper: { name: "Copper Ore", icon: "🟠" },
     ore_tin: { name: "Tin Ore", icon: "⚪️" },
     ore_iron: { name: "Iron Ore", icon: "🔩" },
+    stone_item: { name: "Stone", icon: "🪨" },
     axe:  { name: "Bronze Axe", icon: "🪓" },
     rod:  { name: "Fishing Rod", icon: "🎣" },
     pick: { name: "Bronze Pickaxe", icon: "⛏️" },
@@ -107,13 +110,15 @@
           { id: "t4", tx: 18, tz: 26, respawnAt: 0, stumpUntil: 0 },
           { id: "t5", tx: 10, tz: 28, respawnAt: 0, stumpUntil: 0 },
         ],
-        rocks: [
-          { id: "r1", kind: "copper", tx: 19, tz: 18, respawnAt: 0, stubUntil: 0 },
-          { id: "r2", kind: "tin", tx: 20, tz: 18, respawnAt: 0, stubUntil: 0 },
-          { id: "r3", kind: "copper", tx: 21, tz: 19, respawnAt: 0, stubUntil: 0 },
-          { id: "r4", kind: "iron", tx: 22, tz: 19, respawnAt: 0, stubUntil: 0 },
-        ],
-        fishingSpots: [
+            rocks: [
+  { id: "r1", kind: "stone",  tx: 5, tz: 20, respawnAt: 0, stubUntil: 0 },
+  { id: "r2", kind: "stone",  tx: 6, tz: 20, respawnAt: 0, stubUntil: 0 },
+  { id: "r3", kind: "copper", tx: 5, tz: 22, respawnAt: 0, stubUntil: 0 },
+  { id: "r4", kind: "tin",    tx: 6, tz: 22, respawnAt: 0, stubUntil: 0 },
+  { id: "r5", kind: "iron",   tx: 7, tz: 22, respawnAt: 0, stubUntil: 0 },
+],
+fishingSpots:
+ [
           { id: "f1", tx: 25, tz: 10 },
           { id: "f2", tx: 24, tz: 12 },
           { id: "f3", tx: 27, tz: 12 },
@@ -171,7 +176,159 @@ return s;
   }
 
   let state = loadState();
-  function saveState() { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
+  // ---- Savefile schema + migration (transferable across versions) ----
+function nowIso(){ try { return new Date().toISOString(); } catch { return ""; } }
+
+function baseSaveObject() {
+  return {
+    schemaVersion: SAVE_SCHEMA_VERSION,
+    gameVersion: GAME_VERSION,
+    savedAt: nowIso(),
+    username: state.username || "",
+    // Core progression
+    player: {
+      map: state.map,
+      tx: state.player.tx, tz: state.player.tz,
+      coins: state.coins ?? 0,
+    },
+    skills: JSON.parse(JSON.stringify(state.skills || {})),
+    inventory: JSON.parse(JSON.stringify(state.inventory || [])),
+    bank: JSON.parse(JSON.stringify(state.bank || [])),
+    // World timers (so trees/rocks don't fully reset)
+    world: {
+      trees: (state.world?.trees||[]).map(t=>({ id:t.id, tx:t.tx, tz:t.tz, respawnAt:t.respawnAt||0, stumpUntil:t.stumpUntil||0 })),
+      rocks: (state.world?.rocks||[]).map(r=>({ id:r.id, tx:r.tx, tz:r.tz, kind:r.kind, respawnAt:r.respawnAt||0, stubUntil:r.stubUntil||0 })),
+    },
+    // Keep room for future systems without breaking old saves:
+    extra: {}
+  };
+}
+
+function migrateSave(raw) {
+  // Accept both string and object
+  let s = raw;
+  if (typeof s === "string") {
+    s = JSON.parse(s);
+  }
+  if (!s || typeof s !== "object") throw new Error("Invalid save file.");
+
+  const sv = Number(s.schemaVersion || 0);
+
+  // If a save from the future schema is loaded, we do best-effort:
+  // keep unknown fields, fill missing defaults.
+  let out = { ...s };
+
+  if (!out.player) out.player = {};
+  if (!out.skills) out.skills = {};
+  if (!out.inventory) out.inventory = [];
+  if (!out.bank) out.bank = [];
+  if (!out.world) out.world = {};
+  if (!out.world.trees) out.world.trees = [];
+  if (!out.world.rocks) out.world.rocks = [];
+
+  // v0 (very old / local-only saves): convert from our legacy localStorage state shape
+  if (sv === 0 && out.state) {
+    // Some older formats might have been {state:{...}}
+    const legacy = out.state;
+    out = {
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      gameVersion: GAME_VERSION,
+      savedAt: nowIso(),
+      username: legacy.username || "",
+      player: {
+        map: legacy.map || "overworld",
+        tx: legacy.player?.tx ?? 12,
+        tz: legacy.player?.tz ?? 12,
+        coins: legacy.coins ?? 0,
+      },
+      skills: legacy.skills || {},
+      inventory: legacy.inventory || [],
+      bank: legacy.bank || [],
+      world: {
+        trees: (legacy.world?.trees||[]).map(t=>({ id:t.id, tx:t.tx, tz:t.tz, respawnAt:t.respawnAt||0, stumpUntil:t.stumpUntil||0 })),
+        rocks: (legacy.world?.rocks||[]).map(r=>({ id:r.id, tx:r.tx, tz:r.tz, kind:r.kind, respawnAt:r.respawnAt||0, stubUntil:r.stubUntil||0 })),
+      },
+      extra: {}
+    };
+  }
+
+  // v1 -> current: just ensure defaults exist
+  if (!out.schemaVersion) out.schemaVersion = sv || SAVE_SCHEMA_VERSION;
+  if (!out.gameVersion) out.gameVersion = out.gameVersion || GAME_VERSION;
+  if (!out.savedAt) out.savedAt = nowIso();
+
+  // Ensure new skill name "Constitution" stays consistent (if older save used Hitpoints)
+  if (out.skills.hitpoints && !out.skills.constitution) {
+    out.skills.constitution = out.skills.hitpoints;
+    delete out.skills.hitpoints;
+  }
+
+  // Fill future-proof defaults for selected skill set (won't overwrite existing)
+  const wanted = ["attack","defence","ranged","magic","construction","constitution","crafting","mining","smithing","fishing","cooking","woodcutting","farming"];
+  for (const k of wanted) {
+    out.skills[k] ??= { xp: 0, level: 1 };
+  }
+
+  return out;
+}
+
+function applySaveObject(saveObj) {
+  const s = migrateSave(saveObj);
+
+  state.username = s.username || state.username || "";
+  state.map = s.player?.map || state.map || "overworld";
+  state.player.tx = Number.isFinite(s.player?.tx) ? s.player.tx : state.player.tx;
+  state.player.tz = Number.isFinite(s.player?.tz) ? s.player.tz : state.player.tz;
+  state.coins = Number.isFinite(s.player?.coins) ? s.player.coins : (state.coins ?? 0);
+
+  state.skills = s.skills || state.skills;
+  state.inventory = Array.isArray(s.inventory) ? s.inventory : state.inventory;
+  state.bank = Array.isArray(s.bank) ? s.bank : state.bank;
+
+  // World respawns (merge with current world layout by id)
+  if (state.world?.trees && Array.isArray(s.world?.trees)) {
+    const byId = new Map(state.world.trees.map(t=>[t.id,t]));
+    for (const t of s.world.trees) {
+      const cur = byId.get(t.id);
+      if (cur) { cur.respawnAt = t.respawnAt||0; cur.stumpUntil = t.stumpUntil||0; }
+    }
+  }
+  if (state.world?.rocks && Array.isArray(s.world?.rocks)) {
+    const byId = new Map(state.world.rocks.map(r=>[r.id,r]));
+    for (const r of s.world.rocks) {
+      const cur = byId.get(r.id);
+      if (cur) { cur.respawnAt = r.respawnAt||0; cur.stubUntil = r.stubUntil||0; cur.kind = (r.kind||cur.kind||"stone"); }
+    }
+  }
+
+  saveState();
+  rebuildWorld();
+  updateHUD();
+}
+
+function exportSaveFile() {
+  const obj = baseSaveObject();
+  const jsonText = JSON.stringify(obj, null, 2);
+  const blob = new Blob([jsonText], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeName = (state.username || "player").replace(/[^a-z0-9_-]+/gi,"_").slice(0,24);
+  a.download = `Logger_${safeName}_save_${obj.schemaVersion}.json`;
+  a.href = url;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  return obj;
+}
+
+async function importSaveFile(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  applySaveObject(parsed);
+}
+
+function saveState() { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
   setInterval(saveState, 5000);
 
   // Inventory / Bank helpers
@@ -622,6 +779,29 @@ btn.addEventListener("pointerdown", doBuy);
   const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+// RS3 camera input
+renderer.domElement.addEventListener("contextmenu", (e)=>e.preventDefault());
+
+renderer.domElement.addEventListener("wheel", (e)=>{
+  e.preventDefault();
+  const delta = Math.sign(e.deltaY);
+  camDist *= (delta > 0) ? 1.08 : 0.92;
+  camDist = clamp(camDist, camDistMin, camDistMax);
+}, { passive:false });
+
+// Keyboard camera (A/D rotate, W/S pitch, +/- zoom)
+window.addEventListener("keydown", (e)=>{
+  const k = e.key.toLowerCase();
+  if (k==="a") camYaw -= 0.07;
+  if (k==="d") camYaw += 0.07;
+  if (k==="w") camPitch += 0.05;
+  if (k==="s") camPitch -= 0.05;
+  if (k==="=" || k==="+") camDist *= 0.92;
+  if (k==="-" || k==="_") camDist *= 1.08;
+  camPitch = clamp(camPitch, camPitchMin, camPitchMax);
+  camDist = clamp(camDist, camDistMin, camDistMax);
+});
+
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0f1724);
@@ -783,20 +963,39 @@ btn.addEventListener("pointerdown", doBuy);
     }
   }
 
-  function makeRockMesh(kind="copper") {
+  function makeRockMesh(kind="stone") {
   const g = new THREE.Group();
-  const color = kind==="iron" ? 0x6c7a87 : kind==="tin" ? 0xc9d1d9 : 0xd9893d;
+
+  // Regular rocks are all the same gray; ore rocks are tinted.
+  let color = 0x7b8086; // regular rock gray
+  if (kind==="copper") color = 0xd9893d;
+  if (kind==="tin")    color = 0xc9d1d9;
+  if (kind==="iron")   color = 0x6c7a87;
+
   const mat = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
   const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), mat);
   rock.position.y = 0.22;
+
   const base = new THREE.Mesh(
     new THREE.CylinderGeometry(0.32,0.36,0.08,18),
     new THREE.MeshStandardMaterial({ color:0x2a3647, roughness:1, metalness:0 })
   );
   base.position.y = 0.04;
+
+  // Small ore "spark" nugget for ore rocks only
+  if (kind!=="stone") {
+    const nug = new THREE.Mesh(
+      new THREE.SphereGeometry(0.10, 10, 10),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1 }
+    ));
+    nug.position.set(0.18, 0.33, 0.10);
+    g.add(nug);
+  }
+
   g.add(base, rock);
   return g;
 }
+
 
 function makeTreeMesh() {
 
@@ -986,7 +1185,7 @@ function makeTreeMesh() {
 
       // Rocks / stubs
       for (const rk of (state.world.rocks||[])) {
-        const rock = makeRockMesh(rk.kind);
+        const rock = makeRockMesh(rk.kind||"stone");
         rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
         resourceGroup.add(rock);
         rockPickables.push(rock);
@@ -1244,7 +1443,9 @@ function syncRocksAndStubs() {
   }
 
   // Pointer down
-  renderer.domElement.addEventListener("pointerdown", (ev) => {
+  // World interaction (tap/click) vs camera gestures
+function handleWorldTap(ev) {
+
     if (state.action) return setMsg("Busy...");
     if (state.ui.modal) return; // don't click world through modal
 
@@ -1302,7 +1503,149 @@ function syncRocksAndStubs() {
       if(isSolid(m, hit.tx, hit.tz)) return setMsg("Can't walk there");
       setMoveGoal(hit.tx, hit.tz);
     }
-  });
+  })
+  }
+
+renderer.domElement.addEventListener("pointerdown", (ev) => {
+  // Mouse: right-drag rotate, Shift+left drag pan. Left click = world interaction.
+  if (ev.pointerType === "mouse") {
+    if (ev.button === 2) {
+      camDragging = true;
+      camDragMode = "rotate";
+      camLastX = ev.clientX;
+      camLastY = ev.clientY;
+      suppressWorldClick = true;
+      return;
+    }
+    if (ev.button === 0 && ev.shiftKey) {
+      camDragging = true;
+      camDragMode = "pan";
+      camLastX = ev.clientX;
+      camLastY = ev.clientY;
+      suppressWorldClick = true;
+      return;
+    }
+    if (ev.button === 0 && !ev.shiftKey) {
+      suppressWorldClick = false;
+      return handleWorldTap(ev);
+    }
+    return;
+  }
+
+  // Touch: decide on pointerup (tap) vs gesture (move).
+  if (ev.pointerType === "touch") {
+    renderer.domElement.setPointerCapture?.(ev.pointerId);
+    touches.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY });
+    suppressWorldClick = false;
+  }
+});
+
+renderer.domElement.addEventListener("pointermove", (ev) => {
+  if (ev.pointerType === "mouse") {
+    if (!camDragging) return;
+    const dx = ev.clientX - camLastX;
+    const dy = ev.clientY - camLastY;
+    camLastX = ev.clientX;
+    camLastY = ev.clientY;
+
+    if (camDragMode === "rotate") {
+      camYaw += dx * 0.006;
+      camPitch += -dy * 0.006;
+      camPitch = clamp(camPitch, camPitchMin, camPitchMax);
+    } else if (camDragMode === "pan") {
+      const right = new THREE.Vector3(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
+      const fwd   = new THREE.Vector3(Math.cos(camYaw), 0, Math.sin(camYaw));
+      const panScale = 0.018 * camDist;
+      camPan.addScaledVector(right, -dx * panScale);
+      camPan.addScaledVector(fwd,  dy * panScale);
+    }
+    ev.preventDefault();
+    return;
+  }
+
+  if (ev.pointerType === "touch") {
+    if (!touches.has(ev.pointerId)) return;
+    const t = touches.get(ev.pointerId);
+    t.x = ev.clientX; t.y = ev.clientY;
+    touches.set(ev.pointerId, t);
+
+    if (touches.size === 1) {
+      const tt = Array.from(touches.values())[0];
+      const dx = tt.x - tt.sx;
+      const dy = tt.y - tt.sy;
+      if (Math.abs(dx)+Math.abs(dy) > 8) touchMode = "rotate";
+      if (touchMode === "rotate") {
+        camYaw += dx * 0.0045;
+        camPitch += -dy * 0.0045;
+        camPitch = clamp(camPitch, camPitchMin, camPitchMax);
+        tt.sx = tt.x; tt.sy = tt.y;
+        touches.set(ev.pointerId, tt);
+        suppressWorldClick = true;
+        ev.preventDefault();
+      }
+    } else if (touches.size >= 2) {
+      touchMode = "panzoom";
+      const pts = Array.from(touches.values());
+      const a = pts[0], b = pts[1];
+      const cx = (a.x + b.x)/2;
+      const cy = (a.y + b.y)/2;
+      const dist = Math.hypot(a.x-b.x, a.y-b.y);
+
+      if (lastTwoCenter) {
+        const dx = cx - lastTwoCenter.x;
+        const dy = cy - lastTwoCenter.y;
+        const right = new THREE.Vector3(Math.cos(camYaw + Math.PI/2), 0, Math.sin(camYaw + Math.PI/2));
+        const fwd   = new THREE.Vector3(Math.cos(camYaw), 0, Math.sin(camYaw));
+        const panScale = 0.014 * camDist;
+        camPan.addScaledVector(right, -dx * panScale);
+        camPan.addScaledVector(fwd,  dy * panScale);
+      }
+      if (lastPinchDist > 0) {
+        const pinchDelta = dist - lastPinchDist;
+        camDist *= (pinchDelta < 0) ? 1.02 : 0.98;
+        camDist = clamp(camDist, camDistMin, camDistMax);
+      }
+      lastTwoCenter = { x: cx, y: cy };
+      lastPinchDist = dist;
+      suppressWorldClick = true;
+      ev.preventDefault();
+    }
+  }
+}, { passive:false });
+
+renderer.domElement.addEventListener("pointerup", (ev) => {
+  if (ev.pointerType === "mouse") {
+    camDragging = false;
+    camDragMode = null;
+    setTimeout(()=>{ suppressWorldClick = false; }, 0);
+    return;
+  }
+  if (ev.pointerType === "touch") {
+    const t = touches.get(ev.pointerId);
+    touches.delete(ev.pointerId);
+    if (touches.size < 2) { lastTwoCenter = null; lastPinchDist = 0; }
+    if (touches.size === 0) touchMode = null;
+
+    if (t && !suppressWorldClick) {
+      const moved = Math.abs(t.x - t.sx) + Math.abs(t.y - t.sy);
+      if (moved < 10) handleWorldTap(ev);
+    }
+    suppressWorldClick = false;
+  }
+});
+
+renderer.domElement.addEventListener("pointercancel", (ev) => {
+  if (ev.pointerType === "touch") {
+    touches.clear();
+    touchMode = null;
+    lastTwoCenter = null;
+    lastPinchDist = 0;
+    suppressWorldClick = false;
+  }
+  camDragging = false;
+  camDragMode = null;
+});
+;
 
   // Keyboard
   window.addEventListener("keydown", (e) => {
@@ -1350,11 +1693,20 @@ function syncRocksAndStubs() {
   state.action=null;
   if(!rk) return;
 
-  const itemId = rk.kind==="iron" ? "ore_iron" : rk.kind==="tin" ? "ore_tin" : "ore_copper";
-  addItem(itemId, 1);
-  addXp("mining", XP_MINE);
-  spawnXpPopup(XP_MINE, "⛏️");
-  setMsg("You mine " + ITEM_DEFS[itemId].name);
+  // Regular rocks give Stone; ore rocks give their ore
+let itemId = "stone_item";
+let xp = Math.max(6, Math.floor(XP_MINE * 0.35));
+let icon = "🪨";
+
+if (rk.kind==="copper") { itemId = "ore_copper"; xp = XP_MINE; icon = "⛏️"; }
+if (rk.kind==="tin")    { itemId = "ore_tin";    xp = XP_MINE; icon = "⛏️"; }
+if (rk.kind==="iron")   { itemId = "ore_iron";   xp = XP_MINE + 6; icon = "⛏️"; }
+
+addItem(itemId, 1);
+addXp("mining", xp);
+spawnXpPopup(xp, icon);
+setMsg("You mine " + ITEM_DEFS[itemId].name);
+
 
   rk.respawnAt = now + ROCK_RESPAWN_MS;
   rk.stubUntil = rk.respawnAt;
@@ -1468,16 +1820,56 @@ function finishFish() {
     player.rotation.y += (state.action.kind==="fish")?0.04:(state.action.kind==="mine"?0.05:0.06);
   }
 
-  function updateCamera() {
-    const pos=player.position;
-    const follow=new THREE.Vector3(pos.x,pos.y,pos.z);
-    const offset=new THREE.Vector3(14,14,14);
-    cam.position.copy(follow).add(offset);
-    cam.rotation.order="YXZ";
-    cam.rotation.y=Math.PI/4;
-    cam.rotation.x=-ISO_PITCH;
-    cam.lookAt(follow);
-  }
+  // RS3-style camera (orbit around a target, with yaw/pitch/zoom + pan)
+let camYaw = Math.PI/4;     // radians
+let camPitch = 0.85;        // radians (0 = horizontal, ~1.2 = steep)
+let camDist = 18.0;         // zoom distance
+const camDistMin = 7.5;
+const camDistMax = 34.0;
+const camPitchMin = 0.35;
+const camPitchMax = 1.20;
+
+const camTarget = new THREE.Vector3();      // where the camera looks
+const camTargetSmooth = new THREE.Vector3();
+const camPan = new THREE.Vector3(0,0,0);    // world-space pan offset
+
+// Input state
+let camDragging = false;
+let camDragMode = null; // "rotate" | "pan"
+let camLastX = 0, camLastY = 0;
+let suppressWorldClick = false;
+
+// Touch gesture state
+const touches = new Map(); // id -> {x,y, sx,sy}
+let touchMode = null;      // "rotate" | "panzoom"
+let lastPinchDist = 0;
+let lastTwoCenter = null;
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function updateCamera(dt=0.016) {
+  // Anchor target to player (slightly above feet) + pan
+  camTarget.set(player.position.x, player.position.y + 0.7, player.position.z).add(camPan);
+
+  // Smooth target movement (reduces jitter)
+  const t = 1 - Math.pow(0.001, dt); // framerate-independent smoothing
+  camTargetSmooth.lerp(camTarget, t);
+
+  // Convert yaw/pitch/dist into camera position
+  camPitch = clamp(camPitch, camPitchMin, camPitchMax);
+  camDist  = clamp(camDist,  camDistMin,  camDistMax);
+
+  const cosP = Math.cos(camPitch);
+  const sinP = Math.sin(camPitch);
+
+  const x = camTargetSmooth.x + Math.cos(camYaw) * cosP * camDist;
+  const z = camTargetSmooth.z + Math.sin(camYaw) * cosP * camDist;
+  const y = camTargetSmooth.y + sinP * camDist;
+
+  cam.position.set(x, y, z);
+  cam.lookAt(camTargetSmooth);
+}
+
 
   // Main loop
   let last=performance.now();
@@ -1497,7 +1889,7 @@ function finishFish() {
 
       // Rocks / stubs
       for (const rk of (state.world.rocks||[])) {
-        const rock = makeRockMesh(rk.kind);
+        const rock = makeRockMesh(rk.kind||"stone");
         rock.userData = { kind:"rock", rockId: rk.id, tx: rk.tx, tz: rk.tz };
         resourceGroup.add(rock);
         rockPickables.push(rock);
@@ -1518,7 +1910,7 @@ function finishFish() {
     if(performance.now()>msgUntil) msgEl.textContent="";
 
     updateHUD();
-    updateCamera();
+    updateCamera(dt);
     renderer.render(scene,cam);
     requestAnimationFrame(tick);
   }
