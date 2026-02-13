@@ -691,6 +691,13 @@ function removeOneFromBank(id) { return removeItemFromList(state.bank.items, id,
   renderer.setSize(window.innerWidth, window.innerHeight, false);
 
   const scene = new THREE.Scene();
+    // DBG_CUBE: if you can see a spinning cube + axes, renderer is working.
+    scene.background = new THREE.Color(0x24344f);
+    const axes = new THREE.AxesHelper(2);
+    scene.add(axes);
+    const dbgCube = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
+    dbgCube.position.set(0,0.6,0);
+    scene.add(dbgCube);
   scene.background = new THREE.Color(0x0f1724);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 0.95));
   const dir = new THREE.DirectionalLight(0xffffff, 0.9);
