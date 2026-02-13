@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Logger v0.0.1</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="ui">
+    <div class="toprow">
+      <div class="title">Logger v0.0.1</div>
+      <div class="tabs">
+        <button id="btnSkills" class="tabbtn" type="button">Skills</button>
+        <button id="btnInv" class="tabbtn" type="button">Inventory</button>
+        <button id="btnZoomOut" class="tabbtn" type="button" title="Zoom out">−</button>
+        <button id="btnZoomIn" class="tabbtn" type="button" title="Zoom in">+</button>
+      </div>
+    </div>
+
+    <div class="hudrow">
+      <div id="context" class="context"></div>
+      <div id="msg" class="msg"></div>
+      <div id="coinsHud" class="coinsHud"></div>
+    </div>
+
+    <div id="panelSkills" class="panel hidden">
+      <div class="panelTitle">Skills</div>
+      <div class="skillsWrap">
+        <div id="skillsList" class="skillsList"></div>
+        <div id="skillDetail" class="skillDetail">
+          <div class="skillName" id="skillName">Select a skill</div>
+          <div class="skillMeta" id="skillMeta"></div>
+          <div class="skillBar">
+            <div id="skillBarFill" class="skillBarFill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelInv" class="panel hidden">
+      <div class="panelTitle">Inventory</div>
+      <div class="invTop">
+        <div id="invMeta" class="invMeta"></div>
+        <div id="coins" class="coins"></div>
+      </div>
+      <div id="invGrid" class="invGrid"></div>
+    </div>
+
+    <div class="hint">
+      Tap/click to move • Tap trees/doors/NPCs • <kbd>E</kbd> interact • <kbd>R</kbd> reset • Inventory stacks resources
+    </div>
+  </div>
+
+  <!-- Fullscreen modal overlay for NPC interactions -->
+  <div id="modalOverlay" class="modalOverlay hidden" role="dialog" aria-modal="true">
+    <div class="modalCard">
+      <div class="modalTop">
+        <div id="modalTitle" class="modalTitle">Modal</div>
+        <button id="btnCloseModal" class="closeX" type="button" aria-label="Close">✕</button>
+      </div>
+
+      <div id="modalShop" class="modalBody hidden">
+        <div class="modalHint">Tap an item to buy it.</div>
+        <div id="shopList" class="shopList"></div>
+      </div>
+
+      <div id="modalSell" class="modalBody hidden">
+        <div class="modalHint">Tap an item to sell one. Use “Sell all” to sell everything that NPC buys.</div>
+        <div class="sellRow">
+          <button id="btnSellAll" class="actionBtn" type="button">Sell all</button>
+          <div id="sellInfo" class="sellInfo"></div>
+        </div>
+        <div id="sellList" class="shopList"></div>
+      </div>
+
+      <div id="modalBank" class="modalBody hidden">
+        <div class="modalHint">Tap an item in Inventory to deposit. Tap an item in Bank to withdraw.</div>
+        <div class="bankWrap">
+          <div>
+            <div class="bankTitle">Inventory</div>
+            <div id="bankInvMeta" class="invMeta"></div>
+            <div id="bankInvGrid" class="invGrid"></div>
+          </div>
+          <div>
+            <div class="bankTitle">Bank</div>
+            <div id="bankMeta" class="invMeta"></div>
+            <div id="bankGrid" class="invGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="game"></canvas>
+  <div id="errOverlay" class="errOverlay hidden">
+    <div class="errCard">
+      <div class="errTitle">Logger load error</div>
+      <pre id="errText" class="errText"></pre>
+      <div class="errHint">This usually means a CDN is blocked or a script crashed. Try a different network if needed.</div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const errOverlay = document.getElementById('errOverlay');
+      const errText = document.getElementById('errText');
+      const statusEl = document.createElement('div');
+      statusEl.style.cssText = "position:fixed;bottom:10px;left:10px;z-index:9998;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.15);font-size:12px";
+      statusEl.textContent = "Loading…";
+      document.body.appendChild(statusEl);
+
+      function setStatus(t){ statusEl.textContent = t; }
+
+      function showErr(msg){
+        errText.textContent = msg;
+        errOverlay.classList.remove('hidden');
+        setStatus("Error");
+      }
+
+      window.addEventListener('error', (e)=>{
+        const msg = (e.message || 'Unknown error') + (e.filename ? "
+" + e.filename + ":" + (e.lineno||0) + ":" + (e.colno||0) : "");
+        showErr(msg);
+      });
+      window.addEventListener('unhandledrejection', (e)=>{
+        showErr('Unhandled promise rejection:
+' + (e.reason?.stack || e.reason || 'Unknown reason'));
+      });
+
+      const threeSources = [
+        "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js",
+        "https://unpkg.com/three@0.160.0/build/three.min.js"
+      ];
+
+      function loadScript(src){
+        return new Promise((resolve,reject)=>{
+          const s=document.createElement('script');
+          s.src=src;
+          s.async=true;
+          s.onload=()=>resolve(src);
+          s.onerror=()=>reject(new Error('Failed to load: ' + src));
+          document.head.appendChild(s);
+        });
+      }
+
+      async function loadThree(){
+        let last=null;
+        for (const src of threeSources){
+          try{
+            setStatus("Loading THREE.js…");
+            await loadScript(src);
+            if (window.THREE){ return src; }
+            last = new Error("Loaded but THREE missing: " + src);
+          }catch(e){ last=e; }
+        }
+        throw last || new Error("Could not load THREE.js");
+      }
+
+      async function boot(){
+        try{
+          const used = await loadThree();
+          console.log("THREE loaded from:", used);
+          setStatus("Loading game…");
+          await loadScript("main.js");
+          setStatus("Running");
+        }catch(e){
+          showErr(e.stack || String(e));
+        }
+      }
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
